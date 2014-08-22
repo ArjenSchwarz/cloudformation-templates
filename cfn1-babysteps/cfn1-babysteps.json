@@ -1,0 +1,338 @@
+{
+   "Parameters" : {
+      "KeyName" : {
+         "Type" : "String",
+         "Default" : "blogdemo",
+         "Description" : "Name of an existing EC2 key pair to enable SSH access to the new EC2 instance"
+      },
+      "InstanceType" : {
+         "Type" : "String",
+         "Default" : "t2.micro",
+         "Description" : "Type of EC2 instance to launch"
+      },
+      "SshIp" : {
+         "Type" : "String",
+         "Default" : "10.42.0.0/24",
+         "Description" : "IP address that should have direct access through SSH"
+      }
+   },
+   "Resources" : {
+      "InstanceSecurityGroup" : {
+         "Type" : "AWS::EC2::SecurityGroup",
+         "Properties" : {
+            "VpcId" : {
+               "Ref" : "BabyVPC"
+            },
+            "GroupDescription" : "Babysteps - EC2 instances: HTTP and SSH access",
+            "SecurityGroupIngress" : [
+               {
+                  "ToPort" : "80",
+                  "FromPort" : "80",
+                  "SourceSecurityGroupId" : {
+                     "Ref" : "ELBSecurityGroup"
+                  },
+                  "IpProtocol" : "tcp"
+               },
+               {
+                  "ToPort" : "22",
+                  "FromPort" : "22",
+                  "IpProtocol" : "tcp",
+                  "CidrIp" : {
+                     "Ref" : "SshIp"
+                  }
+               }
+            ],
+            "Tags" : [
+               {
+                  "Value" : "Babysteps EC2",
+                  "Key" : "Name"
+               }
+            ]
+         }
+      },
+      "AttachGateway" : {
+         "Type" : "AWS::EC2::VPCGatewayAttachment",
+         "Properties" : {
+            "VpcId" : {
+               "Ref" : "BabyVPC"
+            },
+            "InternetGatewayId" : {
+               "Ref" : "InternetGateway"
+            }
+         }
+      },
+      "BabyIP1" : {
+         "Type" : "AWS::EC2::EIP",
+         "Properties" : {
+            "InstanceId" : {
+               "Ref" : "Babysteps1"
+            },
+            "Domain" : "vpc"
+         }
+      },
+      "BabyIP2" : {
+         "Type" : "AWS::EC2::EIP",
+         "Properties" : {
+            "InstanceId" : {
+               "Ref" : "Babysteps2"
+            },
+            "Domain" : "vpc"
+         }
+      },
+      "PublicSubnet" : {
+         "Type" : "AWS::EC2::Subnet",
+         "Properties" : {
+            "VpcId" : {
+               "Ref" : "BabyVPC"
+            },
+            "CidrBlock" : {
+               "Fn::FindInMap" : [
+                  "SubnetConfig",
+                  "Public",
+                  "CIDR"
+               ]
+            }
+         }
+      },
+      "ELBSecurityGroup" : {
+         "Type" : "AWS::EC2::SecurityGroup",
+         "Properties" : {
+            "VpcId" : {
+               "Ref" : "BabyVPC"
+            },
+            "SecurityGroupEgress" : [
+               {
+                  "ToPort" : "80",
+                  "FromPort" : "80",
+                  "IpProtocol" : "tcp",
+                  "CidrIp" : "0.0.0.0/0"
+               }
+            ],
+            "GroupDescription" : "Babysteps - ELB: HTTP access",
+            "SecurityGroupIngress" : [
+               {
+                  "ToPort" : "80",
+                  "FromPort" : "80",
+                  "IpProtocol" : "tcp",
+                  "CidrIp" : "0.0.0.0/0"
+               }
+            ],
+            "Tags" : [
+               {
+                  "Value" : "Babysteps ELB",
+                  "Key" : "Name"
+               }
+            ]
+         }
+      },
+      "BabystepsLoadBalancer" : {
+         "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+         "Properties" : {
+            "HealthCheck" : {
+               "Interval" : "30",
+               "Target" : "HTTP:80/index.html",
+               "Timeout" : "5",
+               "UnhealthyThreshold" : "5",
+               "HealthyThreshold" : "3"
+            },
+            "Subnets" : [
+               {
+                  "Ref" : "PublicSubnet"
+               }
+            ],
+            "Instances" : [
+               {
+                  "Ref" : "Babysteps1"
+               },
+               {
+                  "Ref" : "Babysteps2"
+               }
+            ],
+            "Listeners" : [
+               {
+                  "InstancePort" : "80",
+                  "Protocol" : "HTTP",
+                  "LoadBalancerPort" : "80"
+               }
+            ],
+            "SecurityGroups" : [
+               {
+                  "Ref" : "ELBSecurityGroup"
+               }
+            ]
+         }
+      },
+      "PublicRoute" : {
+         "DependsOn" : "AttachGateway",
+         "Type" : "AWS::EC2::Route",
+         "Properties" : {
+            "GatewayId" : {
+               "Ref" : "InternetGateway"
+            },
+            "DestinationCidrBlock" : "0.0.0.0/0",
+            "RouteTableId" : {
+               "Ref" : "PublicRouteTable"
+            }
+         }
+      },
+      "Babysteps1" : {
+         "Type" : "AWS::EC2::Instance",
+         "Properties" : {
+            "SecurityGroupIds" : [
+               {
+                  "Ref" : "InstanceSecurityGroup"
+               }
+            ],
+            "KeyName" : {
+               "Ref" : "KeyName"
+            },
+            "ImageId" : {
+               "Fn::FindInMap" : [
+                  "AWSRegionArch2AMI",
+                  {
+                     "Ref" : "AWS::Region"
+                  },
+                  "AMI"
+               ]
+            },
+            "InstanceType" : {
+               "Ref" : "InstanceType"
+            },
+            "SubnetId" : {
+               "Ref" : "PublicSubnet"
+            },
+            "UserData" : {
+               "Fn::Base64" : {
+                  "Fn::Join" : [
+                     "\n",
+                     [
+                        "#!/bin/bash",
+                        "apt-get install -y apache2"
+                     ]
+                  ]
+               }
+            },
+            "Tags" : [
+               {
+                  "Value" : "Babysteps-1",
+                  "Key" : "Name"
+               }
+            ]
+         }
+      },
+      "Babysteps2" : {
+         "Type" : "AWS::EC2::Instance",
+         "Properties" : {
+            "SecurityGroupIds" : [
+               {
+                  "Ref" : "InstanceSecurityGroup"
+               }
+            ],
+            "KeyName" : {
+               "Ref" : "KeyName"
+            },
+            "ImageId" : {
+               "Fn::FindInMap" : [
+                  "AWSRegionArch2AMI",
+                  {
+                     "Ref" : "AWS::Region"
+                  },
+                  "AMI"
+               ]
+            },
+            "InstanceType" : {
+               "Ref" : "InstanceType"
+            },
+            "SubnetId" : {
+               "Ref" : "PublicSubnet"
+            },
+            "UserData" : {
+               "Fn::Base64" : {
+                  "Fn::Join" : [
+                     "\n",
+                     [
+                        "#!/bin/bash",
+                        "apt-get install -y apache2"
+                     ]
+                  ]
+               }
+            },
+            "Tags" : [
+               {
+                  "Value" : "Babysteps-2",
+                  "Key" : "Name"
+               }
+            ]
+         }
+      },
+      "BabyVPC" : {
+         "Type" : "AWS::EC2::VPC",
+         "Properties" : {
+            "CidrBlock" : {
+               "Fn::FindInMap" : [
+                  "SubnetConfig",
+                  "VPC",
+                  "CIDR"
+               ]
+            }
+         }
+      },
+      "InternetGateway" : {
+         "Type" : "AWS::EC2::InternetGateway"
+      },
+      "PublicRouteTable" : {
+         "Type" : "AWS::EC2::RouteTable",
+         "Properties" : {
+            "VpcId" : {
+               "Ref" : "BabyVPC"
+            }
+         }
+      },
+      "PublicSubnetRouteTableAssociation" : {
+         "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+         "Properties" : {
+            "SubnetId" : {
+               "Ref" : "PublicSubnet"
+            },
+            "RouteTableId" : {
+               "Ref" : "PublicRouteTable"
+            }
+         }
+      }
+   },
+   "AWSTemplateFormatVersion" : "2010-09-09",
+   "Outputs" : {
+      "Babysteps2IpAddress" : {
+         "Value" : {
+            "Fn::GetAtt" : [
+               "Babysteps2",
+               "PublicIp"
+            ]
+         }
+      },
+      "Babysteps1IpAddress" : {
+         "Value" : {
+            "Fn::GetAtt" : [
+               "Babysteps1",
+               "PublicIp"
+            ]
+         }
+      }
+   },
+   "Mappings" : {
+      "SubnetConfig" : {
+         "Public" : {
+            "CIDR" : "10.42.0.0/24"
+         },
+         "VPC" : {
+            "CIDR" : "10.42.0.0/16"
+         }
+      },
+      "AWSRegionArch2AMI" : {
+         "us-east-1" : {
+            "AMI" : "ami-864d84ee"
+         }
+      }
+   },
+   "Description" : "Babysteps example consisting of 2 EC2 instances behind an ELB"
+}
