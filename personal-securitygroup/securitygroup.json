@@ -1,0 +1,52 @@
+{
+   "Resources" : {
+      "InstanceSecurityGroup" : {
+         "Properties" : {
+            "GroupDescription" : "SSH and HTTP(S) access from my current IP Address",
+            "VpcId" : "vpc-a817cfcd",
+            "Tags" : [
+               {
+                  "Value" : "Personal access",
+                  "Key" : "Name"
+               }
+            ],
+            "SecurityGroupIngress" : [
+               {
+                  "FromPort" : "22",
+                  "ToPort" : "22",
+                  "CidrIp" : {
+                     "Ref" : "AccessIP"
+                  },
+                  "IpProtocol" : "tcp"
+               },
+               {
+                  "IpProtocol" : "tcp",
+                  "ToPort" : "80",
+                  "CidrIp" : {
+                     "Ref" : "AccessIP"
+                  },
+                  "FromPort" : "80"
+               },
+               {
+                  "ToPort" : "443",
+                  "CidrIp" : {
+                     "Ref" : "AccessIP"
+                  },
+                  "FromPort" : "443",
+                  "IpProtocol" : "tcp"
+               }
+            ]
+         },
+         "Type" : "AWS::EC2::SecurityGroup"
+      }
+   },
+   "Description" : "Security group for personal access only",
+   "AWSTemplateFormatVersion" : "2010-09-09",
+   "Parameters" : {
+      "AccessIP" : {
+         "Default" : "10.0.0.0/24",
+         "Type" : "String",
+         "Description" : "IP address that should have direct access"
+      }
+   }
+}
