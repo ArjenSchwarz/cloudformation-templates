@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  parserImage:
+    Type: String
+    Description: The Docker image for the parser
+  ecsCluster:
+    Type: String
+    Description: The ECS cluster this needs to be deployed to
+  sqsQueue:
+    Type: String
+    Description: The SQS queue we want to monitor
+
+Resources:
+  parserTask:
+    Type: "AWS::ECS::TaskDefinition"
+    Properties:
+      ContainerDefinitions:
+        -
+          Name: "ParserTask"
+          Image: !Ref "parserImage"
+          Cpu: "100"
+          Memory: "500"
+          Essential: "true"
+  parserService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref "ecsCluster"
+      DesiredCount: "1"
+      TaskDefinition: !Ref "parserTask"
+  parserAutoScalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [application-autoscaling.amazonaws.com]
+          Action: ["sts:AssumeRole"]
+      Path: /
+      Policies:
+      - PolicyName: service-autoscaling
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action: ["application-autoscaling:*", "cloudwatch:DescribeAlarms", "cloudwatch:PutMetricAlarm",
+              "ecs:DescribeServices", "ecs:UpdateService"]
+            Resource: "*"
+  parserTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 10
+      MinCapacity: 1
+      ResourceId: !Join ["/", [service, !Ref "ecsCluster", !GetAtt [parserService, Name]]]
+      RoleARN: !GetAtt [ parserAutoScalingRole, Arn ]
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+  ScaleUp:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: ParserPolicyDown
+      PolicyType: StepScaling
+      ScalingTargetId: !Ref "parserTarget"
+      StepScalingPolicyConfiguration:
+        Cooldown: 60
+        MetricAggregationType: "Average"
+        AdjustmentType: "ChangeInCapacity"
+        StepAdjustments:
+          - MetricIntervalLowerBound: 0
+            MetricIntervalUpperBound: 100
+            ScalingAdjustment: 2
+          - MetricIntervalLowerBound: 100
+            ScalingAdjustment: 4
+  ScaleDown:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: ParserPolicyUp
+      PolicyType: StepScaling
+      ScalingTargetId: !Ref "parserTarget"
+      StepScalingPolicyConfiguration:
+        Cooldown: 60
+        MetricAggregationType: "Average"
+        AdjustmentType: "ChangeInCapacity"
+        StepAdjustments:
+          - MetricIntervalUpperBound: -1
+            MetricIntervalLowerBound: -100
+            ScalingAdjustment: -1
+          - MetricIntervalUpperBound: -100
+            ScalingAdjustment: -2
+  parserSQSAlarm:
+    Type: "AWS::CloudWatch::Alarm"
+    Properties:
+      AlarmName: "parserSQSAlarm"
+      AlarmDescription: "Trigger scaling based on SQS queue"
+      Namespace: "AWS/SQS"
+      MetricName: "ApproximateNumberOfMessagesVisible"
+      ComparisonOperator: "GreaterThanThreshold"
+      Dimensions:
+        - Name: QueueName
+          Value: !Ref "sqsQueue"
+      EvaluationPeriods: 2
+      Period: 300
+      Statistic: 'Average'
+      Threshold: 1000
+      AlarmActions:
+        - !Ref "ScaleUp"
+        - !Ref "ScaleDown"
+      OKActions:
+        - !Ref "ScaleUp"
+        - !Ref "ScaleDown"
