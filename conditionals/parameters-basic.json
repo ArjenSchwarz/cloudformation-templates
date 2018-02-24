@@ -1,0 +1,34 @@
+[
+  {
+    "ParameterKey": "ImageId",
+    "ParameterValue": "ami-97785bed"
+  },
+  {
+    "ParameterKey": "PrivateSubnets",
+    "ParameterValue": "subnet-12345678,subnet-23456789,subnet-34567890"
+  },
+  {
+    "ParameterKey": "PublicSubnets",
+    "ParameterValue": "subnet-4567890a,subnet-567890ab,subnet-67890abc"
+  },
+  {
+    "ParameterKey": "ASGSecurityGroups",
+    "ParameterValue": "sg-12345678"
+  },
+  {
+    "ParameterKey": "LoadBalancerSecurityGroups",
+    "ParameterValue": "sg-34567890"
+  },
+  {
+    "ParameterKey": "KeyName",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "BastionSecurityGroups",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "SSLCertificateArn",
+    "ParameterValue": ""
+  }
+]
